@@ -32,6 +32,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           MI_USER: ${{ secrets.MI_USER }}
           MI_PASS: ${{ secrets.MI_PASS }}
+          MI_PASS_TOKEN: ${{ secrets.MI_PASS_TOKEN }}
           MI_COUNTRY: ${{ secrets.MI_COUNTRY }}
         run: python power_bot.py --once
 
