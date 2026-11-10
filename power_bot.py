@@ -245,13 +245,49 @@ def main() -> None:
         time.sleep(interval)
 
 
+# ---------- вход в Xiaomi ----------
+
+def xiaomi_login():
+    """Возвращает залогиненный MiCloud.
+    Если задан MI_PASS_TOKEN — входит по ключу сессии (без пароля и без подтверждения входа).
+    Иначе — по логину и паролю."""
+    import json as _json
+    from micloud import MiCloud
+
+    user = os.environ["MI_USER"].strip()
+    token = (os.getenv("MI_PASS_TOKEN") or "").strip()
+    mc = MiCloud(user, os.getenv("MI_PASS") or "-")
+
+    if not token:
+        if not mc.login():
+            raise SystemExit("Не удалось войти в Xiaomi по паролю")
+        return mc
+
+    mc._init_session()
+    for domain in ("account.xiaomi.com", ".account.xiaomi.com"):
+        mc.session.cookies.set("passToken", token, domain=domain)
+        mc.session.cookies.set("userId", user, domain=domain)
+    r = mc.session.get("https://account.xiaomi.com/pass/serviceLogin?sid=xiaomiio&_json=true")
+    j = _json.loads(r.text.replace("&&&START&&&", ""))
+    if not j.get("ssecurity") or not j.get("location"):
+        raise SystemExit(
+            "Ключ сессии Xiaomi не подошёл или устарел (code="
+            f"{j.get('code')}). Обнови секрет MI_PASS_TOKEN.")
+    mc.user_id = j.get("userId") or user
+    mc.ssecurity = j["ssecurity"]
+    mc._login_step3(j["location"])
+    if not mc.service_token:
+        raise SystemExit("Xiaomi не выдал serviceToken по ключу сессии")
+    logging.info("Вход в Xiaomi по ключу сессии выполнен")
+    return mc
+
+
 # ---------- режим GitHub Actions: один короткий запуск ----------
 
 def run_once() -> None:
     """Проверяет свет и завершается. Запускается по расписанию каждые 5 минут.
     Свет есть — если хоть одно устройство онлайн.
     Света нет — если все устройства офлайн CHECKS проверок подряд с паузой PAUSE сек."""
-    from micloud import MiCloud
 
     tg_token = os.environ["TG_TOKEN"]
     tg_chat_id = os.environ["TG_CHAT_ID"]
@@ -279,10 +315,10 @@ def run_once() -> None:
         state["last_summary"] = prev_key
         logging.info("Недельная сводка отправлена")
 
-    mc = MiCloud(os.environ["MI_USER"], os.environ["MI_PASS"])
-    if not mc.login():
+    try:
+        mc = xiaomi_login()
+    finally:
         save_state(state)
-        raise SystemExit("Не удалось войти в Xiaomi — проверь логин/пароль или подтверждение входа")
 
     power, online, first_off = None, [], None
     for i in range(checks):
