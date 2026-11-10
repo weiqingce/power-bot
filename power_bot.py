@@ -302,8 +302,11 @@ def run_once() -> None:
         )
         if not r.ok:
             raise RuntimeError(f"Telegram ответил ошибкой {r.status_code}: {r.text}")
+        state["last_msg"] = time.time()
 
+    status_every = int(os.getenv("STATUS_EVERY_MIN", "60")) * 60
     state = load_state()
+    state.setdefault("last_msg", time.time())
 
     # недельная сводка: первый запуск после 00:05 понедельника — за прошлую неделю
     this_monday = current_monday()
@@ -353,6 +356,13 @@ def run_once() -> None:
         log_event(event_ts, power)
         state.update({"power": power, "since": event_ts})
         logging.info("Состояние изменилось: %s", "свет есть" if power else "света нет")
+
+    # обычный режим: статус не чаще раза в час (с запасом 5 мин на задержки GitHub)
+    elif time.time() - state["last_msg"] >= status_every - 300:
+        since = state.get("since")
+        dur = f" уже {fmt_dur(time.time() - since)} (с {fmt_time(since)})" if since else ""
+        send(("💡 Свет есть" if power else "🔌 Света нет") + dur)
+        logging.info("Отправлен ежечасный статус")
 
     save_state(state)
 
